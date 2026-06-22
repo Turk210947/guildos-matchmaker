@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, validator
 from typing import List, Optional, Union
 from matchmaker import MatchmakingEngine, Player
@@ -39,7 +40,7 @@ async def match_players(request: Request):
         raw_body = await request.json()
         data = MatchRequest(**raw_body)
     except Exception as e:
-        return {"status": "error", "reply": f"ข้อมูลไม่ถูกต้อง: {str(e)}"}
+        return PlainTextResponse(f"ข้อมูลไม่ถูกต้อง: {str(e)}")
 
     target_user = Player(
         user_id="U001",
@@ -53,17 +54,11 @@ async def match_players(request: Request):
     matches = engine.find_matches(target_user, candidates_pool)
 
     if not matches:
-        return {
-            "status": "no_match",
-            "reply": f"ตอนนี้ยังไม่มีผู้เล่น {data.game} ที่ว่างตรงกันครับ ลองใหม่ทีหลังนะ 🎮"
-        }
+        return PlainTextResponse(f"ตอนนี้ยังไม่มีผู้เล่น {data.game} ที่ว่างตรงกันครับ 🎮")
 
     top = matches[0]
-    return {
-        "status": "success",
-        "reply": f"🎯 เจอคู่เล่นแล้ว!\n👤 ชื่อ: {top.display_name}\n📊 ความเข้ากัน: {top.adjusted_score * 100:.0f}%\n🎮 เกม: {data.game}",
-        "top_matches": [{"name": m.display_name, "score": f"{m.adjusted_score*100:.0f}%"} for m in matches]
-    }
+    reply = f"🎯 เจอคู่เล่นแล้ว!\n👤 ชื่อ: {top.display_name}\n📊 ความเข้ากัน: {top.adjusted_score * 100:.0f}%\n🎮 เกม: {data.game}"
+    return PlainTextResponse(reply)
 
 @app.get("/health")
 async def health():
