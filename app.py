@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, validator
 from typing import List, Optional, Union
+import json
 from matchmaker import MatchmakingEngine, Player
 
 app = FastAPI()
@@ -29,8 +30,8 @@ class MatchRequest(BaseModel):
         extra = "allow"
 
 candidates_pool = [
-    Player(user_id="U002", display_name="Pro_Gamer", games=["Valorant"], available_time=["20:00-22:00"], roles=["Controller"], playstyle_vector=[0.8, 0.2, 0.7, 0.5]),
-    Player(user_id="U003", display_name="Chill_Bro", games=["Valorant"], available_time=["20:00-22:00"], roles=["Initiator"], playstyle_vector=[0.5, 0.5, 0.5, 0.5]),
+    Player(user_id="U002", display_name="Pro_Gamer", games=["Valorant", "RoV"], available_time=["20:00-22:00", "21:00-23:00"], roles=["Controller"], playstyle_vector=[0.8, 0.2, 0.7, 0.5]),
+    Player(user_id="U003", display_name="Chill_Bro", games=["Valorant", "RoV"], available_time=["20:00-22:00", "21:00-23:00"], roles=["Initiator", "Support"], playstyle_vector=[0.5, 0.5, 0.5, 0.5]),
     Player(user_id="U004", display_name="Toxic_Guy", games=["Valorant"], available_time=["20:00-22:00"], roles=["Duelist"], playstyle_vector=[0.9, 0.1, 0.8, 0.5], report_rate=0.9, leave_rate=0.9),
 ]
 
@@ -38,6 +39,14 @@ candidates_pool = [
 async def match_players(request: Request):
     try:
         raw_body = await request.json()
+
+        # รองรับกรณี Botnoi ส่งมาแบบ {"user_input": {...}}
+        if "user_input" in raw_body:
+            inner = raw_body["user_input"]
+            if isinstance(inner, str):
+                inner = json.loads(inner)
+            raw_body = inner
+
         data = MatchRequest(**raw_body)
     except Exception as e:
         return PlainTextResponse(f"ข้อมูลไม่ถูกต้อง: {str(e)}")
