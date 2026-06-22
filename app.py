@@ -1,44 +1,71 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import List
+from fastapi import FastAPI, Request
+from pydantic import BaseModel, validator
+from typing import List, Optional, Union
 from matchmaker import MatchmakingEngine, Player
 
 app = FastAPI()
 engine = MatchmakingEngine()
 
-# โครงสร้าง JSON ที่ Botnoi จะส่งมา
 class MatchRequest(BaseModel):
     game: str
-    time: List[str]
-    role: str
-    style: str
+    time: Union[List[str], str]   # ← รับได้ทั้ง string และ list
+    role: Union[List[str], str]   # ← รับได้ทั้ง string และ list
+    style: Optional[str] = None   # ← Optional เพื่อกันกรณีไม่ส่งมา
 
-# จำลองฐานข้อมูลผู้เล่นในระบบ (Mock Candidates)
+    @validator("time", pre=True)
+    def parse_time(cls, v):
+        if isinstance(v, str):
+            return [t.strip() for t in v.split(",")]
+        return v
+
+    @validator("role", pre=True)
+    def parse_role(cls, v):
+        if isinstance(v, str):
+            return [r.strip() for r in v.split(",")]
+        return v
+
+    class Config:
+        extra = "allow"  # ← รับ field เกินโดยไม่ error
+
 candidates_pool = [
-    Player(user_id="U002", display_name="Pro_Gamer", games=["Valorant"], available_time=["20:00-22:00"], roles=["Controller"], playstyle_vector=[0.8, 0.2, 0.7, 0.5]),
-    Player(user_id="U003", display_name="Chill_Bro", games=["Valorant"], available_time=["20:00-22:00"], roles=["Initiator"], playstyle_vector=[0.5, 0.5, 0.5, 0.5]),
-    # คนนี้โดนรีพอร์ตเยอะ (report_rate=0.9) ระบบต้องทำการปัดตก ไม่เอามาจับคู่
-    Player(
-        user_id="U004", display_name="Toxic_Guy", games=["Valorant"], available_time=["20:00-22:00"], roles=["Duelist"], playstyle_vector=[0.9, 0.1, 0.8, 0.5], report_rate=0.9, leave_rate=0.9 # เพิ่มการออกเกมกลางคันเข้าไป
-    )
+    Player(user_id="U002", display_name="Pro_Gamer",
+           games=["Valorant"], available_time=["20:00-22:00"],
+           roles=["Controller"], playstyle_vector=[0.8, 0.2, 0.7, 0.5]),
+    Player(user_id="U003", display_name="Chill_Bro",
+           games=["Valorant"], available_time=["20:00-22:00"],
+           roles=["Initiator"], playstyle_vector=[0.5, 0.5, 0.5, 0.5]),
+    Player(user_id="U004", display_name="Toxic_Guy",
+           games=["Valorant"], available_time=["20:00-22:00"],
+           roles=["Duelist"], playstyle_vector=[0.9, 0.1, 0.8, 0.5],
+           report_rate=0.9, leave_rate=0.9),
 ]
 
 @app.post("/match")
-async def match_players(data: MatchRequest):
-    # 1. แปลงคำสั่งที่ได้จาก Botnoi ให้กลายเป็น Player Object
+async def match_players(request: Request):
+    try:
+        raw_body = await request.json()
+        data = MatchRequest(**raw_body)
+    except Exception as e:
+        return {"status": "error", "message": f"รูปแบบข้อมูลไม่ถูกต้อง: {str(e)}"}
+
     target_user = Player(
         user_id="U001",
         display_name="Botnoi_User",
         games=[data.game],
-        available_time=data.time,
-        roles=[data.role],
-        playstyle_vector=[0.5, 0.5, 0.5, 0.5] # ตอนนี้ใส่ค่ากลางๆ ไว้ก่อน
+        available_time=data.time,   # ← เป็น List แน่นอนแล้ว
+        roles=data.role,            # ← เป็น List แน่นอนแล้ว
+        playstyle_vector=[0.5, 0.5, 0.5, 0.5],
     )
 
-    # 2. ส่งเข้า Algorithm จับคู่
     matches = engine.find_matches(target_user, candidates_pool)
 
-    # 3. จัดฟอร์แมตข้อมูลส่งกลับไปให้หน้าเว็บ
+    if not matches:
+        # ← กรณีไม่เจอคู่ ต้องตอบกลับให้ Botnoi แสดงผลได้
+        return {
+            "status": "no_match",
+            "reply": f"ขณะนี้ยังไม่มีผู้เล่น {data.game} ที่ว่างตรงกันนะครับ ลองใหม่อีกครั้งในภายหลัง 🎮"
+        }
+
     results = []
     for match in matches:
         results.append({
@@ -47,7 +74,21 @@ async def match_players(data: MatchRequest):
             "match_score": f"{match.adjusted_score * 100:.2f}%"
         })
 
+    # สร้าง reply text สำหรับให้ Botnoi แสดงใน Chat
+    top = results[0]
+    reply_text = (
+        f"🎯 เจอคู่เล่นแล้ว!\n"
+        f"👤 ชื่อ: {top['name']}\n"
+        f"📊 ความเข้ากัน: {top['match_score']}\n"
+        f"🎮 เกม: {data.game}"
+    )
+
     return {
         "status": "success",
+        "reply": reply_text,       # ← Botnoi ดึง field นี้ไปแสดง
         "top_matches": results
     }
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
