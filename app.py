@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, validator
 from typing import List, Optional, Union
 import json
@@ -39,17 +39,15 @@ candidates_pool = [
 async def match_players(request: Request):
     try:
         raw_body = await request.json()
-
-        # รองรับกรณี Botnoi ส่งมาแบบ {"user_input": {...}}
         if "user_input" in raw_body:
             inner = raw_body["user_input"]
             if isinstance(inner, str):
                 inner = json.loads(inner)
             raw_body = inner
-
         data = MatchRequest(**raw_body)
     except Exception as e:
-        return PlainTextResponse(f"ข้อมูลไม่ถูกต้อง: {str(e)}")
+        # เปลี่ยนเป็น JSONResponse เพื่อป้องกัน Botnoi Error
+        return JSONResponse(content={"result": f"ข้อมูลไม่ถูกต้อง: {str(e)}"})
 
     target_user = Player(
         user_id="U001",
@@ -63,11 +61,14 @@ async def match_players(request: Request):
     matches = engine.find_matches(target_user, candidates_pool)
 
     if not matches:
-        return PlainTextResponse(f"ตอนนี้ยังไม่มีผู้เล่น {data.game} ที่ว่างตรงกันครับ 🎮")
+        # ส่งผลลัพธ์กรณีไม่เจอคู่กลับเป็น JSON
+        return JSONResponse(content={"result": f"ตอนนี้ยังไม่มีผู้เล่น {data.game} ที่ว่างตรงกันครับ 🎮"})
 
     top = matches[0]
     reply = f"🎯 เจอคู่เล่นแล้ว!\n👤 ชื่อ: {top.display_name}\n📊 ความเข้ากัน: {top.adjusted_score * 100:.0f}%\n🎮 เกม: {data.game}"
-    return PlainTextResponse(reply)
+    
+    # ส่งผลลัพธ์สำเร็จกลับเป็น JSON ใน key ที่ชื่อว่า "result"
+    return JSONResponse(content={"result": reply})
 
 @app.get("/health")
 async def health():
