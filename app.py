@@ -8,36 +8,29 @@ engine = MatchmakingEngine()
 
 class MatchRequest(BaseModel):
     game: str
-    time: Union[List[str], str]   # ← รับได้ทั้ง string และ list
-    role: Union[List[str], str]   # ← รับได้ทั้ง string และ list
-    style: Optional[str] = None   # ← Optional เพื่อกันกรณีไม่ส่งมา
+    time: Union[List[str], str]
+    role: Union[List[str], str]
+    style: Optional[str] = None
 
     @validator("time", pre=True)
     def parse_time(cls, v):
         if isinstance(v, str):
-            return [t.strip() for t in v.split(",")]
+            return [v.strip()]
         return v
 
     @validator("role", pre=True)
     def parse_role(cls, v):
         if isinstance(v, str):
-            return [r.strip() for r in v.split(",")]
+            return [v.strip()]
         return v
 
     class Config:
-        extra = "allow"  # ← รับ field เกินโดยไม่ error
+        extra = "allow"
 
 candidates_pool = [
-    Player(user_id="U002", display_name="Pro_Gamer",
-           games=["Valorant"], available_time=["20:00-22:00"],
-           roles=["Controller"], playstyle_vector=[0.8, 0.2, 0.7, 0.5]),
-    Player(user_id="U003", display_name="Chill_Bro",
-           games=["Valorant"], available_time=["20:00-22:00"],
-           roles=["Initiator"], playstyle_vector=[0.5, 0.5, 0.5, 0.5]),
-    Player(user_id="U004", display_name="Toxic_Guy",
-           games=["Valorant"], available_time=["20:00-22:00"],
-           roles=["Duelist"], playstyle_vector=[0.9, 0.1, 0.8, 0.5],
-           report_rate=0.9, leave_rate=0.9),
+    Player(user_id="U002", display_name="Pro_Gamer", games=["Valorant"], available_time=["20:00-22:00"], roles=["Controller"], playstyle_vector=[0.8, 0.2, 0.7, 0.5]),
+    Player(user_id="U003", display_name="Chill_Bro", games=["Valorant"], available_time=["20:00-22:00"], roles=["Initiator"], playstyle_vector=[0.5, 0.5, 0.5, 0.5]),
+    Player(user_id="U004", display_name="Toxic_Guy", games=["Valorant"], available_time=["20:00-22:00"], roles=["Duelist"], playstyle_vector=[0.9, 0.1, 0.8, 0.5], report_rate=0.9, leave_rate=0.9),
 ]
 
 @app.post("/match")
@@ -46,47 +39,30 @@ async def match_players(request: Request):
         raw_body = await request.json()
         data = MatchRequest(**raw_body)
     except Exception as e:
-        return {"status": "error", "message": f"รูปแบบข้อมูลไม่ถูกต้อง: {str(e)}"}
+        return {"status": "error", "reply": f"ข้อมูลไม่ถูกต้อง: {str(e)}"}
 
     target_user = Player(
         user_id="U001",
         display_name="Botnoi_User",
         games=[data.game],
-        available_time=data.time,   # ← เป็น List แน่นอนแล้ว
-        roles=data.role,            # ← เป็น List แน่นอนแล้ว
+        available_time=data.time,
+        roles=data.role,
         playstyle_vector=[0.5, 0.5, 0.5, 0.5],
     )
 
     matches = engine.find_matches(target_user, candidates_pool)
 
     if not matches:
-        # ← กรณีไม่เจอคู่ ต้องตอบกลับให้ Botnoi แสดงผลได้
         return {
             "status": "no_match",
-            "reply": f"ขณะนี้ยังไม่มีผู้เล่น {data.game} ที่ว่างตรงกันนะครับ ลองใหม่อีกครั้งในภายหลัง 🎮"
+            "reply": f"ตอนนี้ยังไม่มีผู้เล่น {data.game} ที่ว่างตรงกันครับ ลองใหม่ทีหลังนะ 🎮"
         }
 
-    results = []
-    for match in matches:
-        results.append({
-            "user_id": match.user_id,
-            "name": match.display_name,
-            "match_score": f"{match.adjusted_score * 100:.2f}%"
-        })
-
-    # สร้าง reply text สำหรับให้ Botnoi แสดงใน Chat
-    top = results[0]
-    reply_text = (
-        f"🎯 เจอคู่เล่นแล้ว!\n"
-        f"👤 ชื่อ: {top['name']}\n"
-        f"📊 ความเข้ากัน: {top['match_score']}\n"
-        f"🎮 เกม: {data.game}"
-    )
-
+    top = matches[0]
     return {
         "status": "success",
-        "reply": reply_text,       # ← Botnoi ดึง field นี้ไปแสดง
-        "top_matches": results
+        "reply": f"🎯 เจอคู่เล่นแล้ว!\n👤 ชื่อ: {top.display_name}\n📊 ความเข้ากัน: {top.adjusted_score * 100:.0f}%\n🎮 เกม: {data.game}",
+        "top_matches": [{"name": m.display_name, "score": f"{m.adjusted_score*100:.0f}%"} for m in matches]
     }
 
 @app.get("/health")
