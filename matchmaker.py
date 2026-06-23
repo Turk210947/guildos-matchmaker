@@ -23,17 +23,19 @@ TEAM_WEIGHTS = {
 MATCH_THRESHOLD = 0.60
 MAX_CANDIDATE_POOL = 200
 
+# [แก้ไข 3] อัปเดตคำศัพท์ Role ให้ตรงกับ Output ที่ GenAI สกัดออกมา
 ROLE_COMPATIBILITY: Dict[Tuple[str, str], float] = {
-    ("Duelist", "Controller"): 1.0,
-    ("Duelist", "Initiator"): 1.0,
-    ("Carry", "Support"): 1.0,
-    ("Support", "Carry"): 1.0,
+    # FPS
+    ("Duelist/Entry", "Controller"): 1.0,
+    ("Duelist/Entry", "Initiator"): 1.0,
+    ("Controller", "Initiator"): 0.9,
+    # MOBA
+    ("Carry", "Support/Roam"): 1.0,
+    ("Jungle", "Mid Lane"): 0.9,
+    ("Offlane", "Jungle"): 0.8,
+    # General
     ("Tank", "Healer"): 1.0,
-    ("Healer", "Tank"): 1.0,
-    ("Jungle", "Mage"): 0.9,
-    ("Mage", "Jungle"): 0.9,
-    ("Roaming", "Carry"): 1.0,
-    ("Carry", "Roaming"): 1.0,
+    ("DPS", "Tank"): 0.9,
 }
 
 IDEAL_TEAM_COMPOSITIONS: Dict[str, List[str]] = {
@@ -110,8 +112,9 @@ class MatchmakingEngine:
     @staticmethod
     def calculate_time_score(user_a: Player, user_b: Player) -> float:
         time_a, time_b = set(user_a.available_time), set(user_b.available_time)
-        if not time_a:
-            return 0.0
+        # [แก้ไขเสริม] ถ้าฝ่ายใดฝ่ายหนึ่งไม่ระบุเวลา (Array ว่าง = เล่นตอนไหนก็ได้) ให้คะแนนเวลาเต็ม 1.0 ไปเลย
+        if not time_a or not time_b:
+            return 1.0
         return len(time_a & time_b) / len(time_a)
 
     @staticmethod
@@ -119,8 +122,11 @@ class MatchmakingEngine:
         best_score = 0.0
         for role_a in user_a.roles:
             for role_b in user_b.roles:
+                # [แก้ไข 2] เช็กสลับฝั่ง (Two-way check) เพื่อป้องกันบั๊กหาไม่เจอ
                 if (role_a, role_b) in ROLE_COMPATIBILITY:
                     best_score = max(best_score, ROLE_COMPATIBILITY[(role_a, role_b)])
+                elif (role_b, role_a) in ROLE_COMPATIBILITY:
+                    best_score = max(best_score, ROLE_COMPATIBILITY[(role_b, role_a)])
                 elif role_a == role_b:
                     best_score = max(best_score, 0.5)
         return best_score
@@ -210,8 +216,12 @@ class MatchmakingEngine:
             return False
         if not set(user_a.games) & set(user_b.games):
             return False
-        if not set(user_a.available_time) & set(user_b.available_time):
+            
+        # [แก้ไข 1] ถ้ามีคนไม่ระบุเวลา (ว่างตลอด) ให้ผ่านได้เลย ไม่ต้องบล็อกทิ้ง
+        time_a, time_b = set(user_a.available_time), set(user_b.available_time)
+        if time_a and time_b and not (time_a & time_b):
             return False
+            
         if user_b.user_id in user_a.blocked_users:
             return False
         if user_a.user_id in user_b.blocked_users:
@@ -379,7 +389,7 @@ class TestMatchmakingEngine(unittest.TestCase):
             display_name="Player 2",
             games=["RoV"],
             available_time=["22:00-24:00"],
-            roles=["Support"],
+            roles=["Support/Roam"],
             playstyle_vector=[0.7, 0.3, 0.8, 0.4],
             region="TH",
         )
@@ -409,7 +419,7 @@ class TestMatchmakingEngine(unittest.TestCase):
             display_name="Toxic",
             games=["RoV"],
             available_time=["20:00-22:00"],
-            roles=["Support"],
+            roles=["Support/Roam"],
             playstyle_vector=[0.1, 0.1, 0.1, 0.1],
             report_rate=1.0,
             leave_rate=1.0,
@@ -432,7 +442,7 @@ def demo():
         region="TH",
     )
     candidates = [
-        Player("U002", "Mock Player 2", ["RoV"], ["22:00-24:00"], ["Support"], [0.7, 0.3, 0.8, 0.4], "TH"),
+        Player("U002", "Mock Player 2", ["RoV"], ["22:00-24:00"], ["Support/Roam"], [0.7, 0.3, 0.8, 0.4], "TH"),
         Player("U003", "Mock Player 3", ["RoV"], ["20:00-22:00"], ["Jungle"], [0.6, 0.2, 0.7, 0.6], "TH", report_rate=0.8, leave_rate=0.5),
         Player("U004", "Mock Player 4", ["Valorant"], ["22:00-24:00"], ["Controller"], [0.9, 0.1, 0.8, 0.5], "TH"),
     ]
