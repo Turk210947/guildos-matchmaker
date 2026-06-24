@@ -99,6 +99,22 @@ def get_candidates_from_db(game: str) -> List[Player]:
 
 # --- Endpoint ---
 
+from fastapi import FastAPI, Request
+import json
+
+# เพิ่ม endpoint นี้เข้าไป
+@app.post("/debug")
+async def debug_payload(request: Request):
+    raw = await request.body()
+    try:
+        parsed = await request.json()
+    except:
+        parsed = "ไม่สามารถ parse JSON ได้"
+    return {
+        "raw": raw.decode("utf-8"),
+        "parsed": parsed
+    }
+
 @app.post("/match")
 async def match_players(payload: MatchRequestPayload):
     try:
