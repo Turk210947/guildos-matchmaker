@@ -109,11 +109,13 @@ async def debug_payload(request: Request):
     try:
         parsed = await request.json()
     except:
-        parsed = "ไม่สามารถ parse JSON ได้"
-    return {
-        "raw": raw.decode("utf-8"),
-        "parsed": parsed
-    }
+        parsed = "parse ไม่ได้"
+    
+    print("=== BOTNOI PAYLOAD ===")
+    print(raw.decode("utf-8"))
+    print("======================")
+    
+    return {"raw": raw.decode("utf-8"), "parsed": parsed}
 
 @app.post("/match")
 async def match_players(payload: MatchRequestPayload):
